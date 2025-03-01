@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+	<title>BRover control panel</title>
+</head>
+<body>
+
+<div class="container">
+	<header>
+		<div class="row">
+			<h1>Сандуны</h1>
+			<p style="margin-top: 10px;">nto2024-2025</p>
+		</div>
+		<div class="info-panel">
+			<div class="row">
+				<p>X: <span id="y-cord"></span></p>
+				<p>Y: <span id="x-cord"></span></p>
+				<p>THETA: <span id="theta"></span></p>
+			</div>
+			<p>DIRECTION: <span id="direction"></span></p>
+		</div>
+	</header>
+	<div class="feed-wrapper">
+		<div class="video-feed">
+			<img src="{{ url_for('video_feed') }}" width="100%">
+		</div>
+
+		<div class="side-panel">
+			<form id="form-velocity" action="/update_velocity" method="post">
+				<div class="col">
+					<div class="row">
+						<input id="range-linear" type="range" name="linear" min="0.1" max="1" value="0.1" step="0.1" oninput="this.nextElementSibling.value = this.value">
+						<output></output>
+					</div>
+					<label for="linear">Linear speed</label>
+				</div>
+				<div class="col">
+					<div class="row">
+						<input id="range-angular" type="range" name="angular" min="0.1" max="1" value="0.4" step="0.1" oninput="this.nextElementSibling.value = this.value">
+						<output></output>
+					</div>
+					<label for="angular">Angular speed</label>
+				</div>
+				<div class="col" id="servo-info">
+					<p>Cam vertical angle: <span id="cam-vert">90</span></p>
+					<p>Cam horizontal angle: <span id="cam-horiz">90</span></p>
+					<p>Payload vertical angle: <span id="payload-vert">0</span></p>
+					<p>Payload roll: <span id="payload-roll">FIXED</span></p>
+				</div>
+			</form>
+			
+			<div class="visualizer">
+				<div id="visualizer-content"></div>
+			</div>
+		</div>
+
+	</div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.js"></script>
+<script>
+	function clamp(ang) {
+		if (ang < 0) {
+			return 0
+		}
+		if (ang > 180) {
+			return 180
+		}
+		return ang
+	}
+	$('#range-linear, #range-angular').on('change', function() {
+		$.ajax({
+			url : this.form.action,
+			type: this.form.method,
+			data: {
+				val: this.value,
+				type: this.name
+			}
+			});
+	});
+	$(document).keypress(function(e) {
+		if (e.key == 'o') {
+			$('#cam-vert').text(clamp(Number($('#cam-vert').text())+5))
+		} else if (e.key == 'p') {
+			$('#cam-vert').text(clamp(Number($('#cam-vert').text())-5))
+		} else if (e.key == 'k') {
+			$('#cam-horiz').text(clamp(ang = Number($('#cam-horiz').text())+5))
+		} else if (e.key == 'l') {
+			$('#cam-horiz').text(clamp(Number($('#cam-horiz').text())-5))
+		} else if (e.key == 'n') {
+			$('#payload-vert').text(clamp(Number($('#payload-vert').text())+5))
+		} else if (e.key == 'm') {
+			$('#payload-vert').text(clamp(Number($('#payload-vert').text())-5))
+		} else if (e.key == 'v') {
+			$('#payload-roll').text("ROLL")
+		} else if (e.key == 'b') {
+			$('#payload-roll').text("ROLL BACK")
+		}
+		$.ajax({
+			url : '/update_key',
+			type: 'post',
+			data: {
+					key: e.key,
+					}
+		});
+		$('#visualizer-content').text(e.key)
+	});
+</script>
+<script>
+	$(document).keyup(function(e) {
+		$.ajax({
+			url : '/update_key',
+			type: 'post',
+			data: {
+					key: 'reset',
+				}
+		});
+		if (e.key == 'b' || e.key == 'v') {
+			$('#payload-roll').text("FIXED")
+		}
+		$('#visualizer-content').text('')
+	});
+</script>
+<script>
+	setInterval(function(){ 
+		$.getJSON("/sys_info", (data) => {
+			$("#x-cord").text(data.x)
+			$("#y-cord").text(data.x)
+			$("#theta").text(data.theta)
+			$("#direction").text(data.direction)
+		})
+	}, 30)
+</script>
+</body>
+</html>
