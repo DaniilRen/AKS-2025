@@ -1,10 +1,6 @@
-#include <GyverStepper.h>
 #include <NewPing.h>
 #include <VBCoreG4_arduino_system.h>
 #include <Servo.h>
-
-
-GStepper<STEPPER4WIRE> stepper(2048, PA3, PA1, PA2, PA0);
 
 
 #define camera_up PB12
@@ -18,7 +14,6 @@ NewPing sonar(PB1, PB2, 200);
 bool flag_open = false;
 
 
-//uint8_t data[4] = { 90, 13, 14, 15 };  // 5A D E F
 uint8_t box_open_packet[2] = { 1, 1 }, box_close_packet[2] = { 0, 0 };
 
 
@@ -28,6 +23,11 @@ CanFD* canfd;
 FDCAN_TxHeaderTypeDef TxHeader;  //FDCAN_TxHeaderTypeDef TxHeader;
 void setup() {
   Serial.begin(115200);
+
+  pinMode(PA0, OUTPUT);
+  pinMode(PA1, OUTPUT);
+  digitalWrite(PA0, LOW);
+  digitalWrite(PA1, LOW);
 
 
   pinMode(camera_up, OUTPUT);
@@ -41,17 +41,10 @@ void setup() {
   panel_up1.attach(panel1);
   panel_up2.attach(panel2);
 
-
-  stepper.setRunMode(KEEP_SPEED);
-  stepper.setSpeedDeg(60);  // в градусах/сек
-
-  stepper.setMaxSpeedDeg(60);
-
-  // отключать мотор при достижении цели
-  stepper.autoPower(true);
-  // включить мотор (если указан пин en)
-  stepper.enable();
-
+  camera_right_left.write(90);
+  camera_up_down.write(90);
+  panel_up1.write(10);
+  panel_up2.write(170);
 
 
   pinMode(LED2, OUTPUT);
@@ -72,6 +65,10 @@ void setup() {
   TxHeader.Identifier = 0x12;
   TxHeader.DataLength = FDCAN_DLC_BYTES_2;
   TxHeader.IdType = FDCAN_EXTENDED_ID;
+
+
+
+  delay(12000);  // время, чтобы убрать ровер в короб
 }
 
 
@@ -106,20 +103,35 @@ uint8_t* Get_data(int length) {
   return nullptr;
 }
 
+void MOTORS(int t) {
+  if (t == 1) {
+    digitalWrite(PA0, HIGH);
+    digitalWrite(PA1, LOW);
+  } else {
+    digitalWrite(PA0, LOW);
+    digitalWrite(PA1, HIGH);
+  }
+}
 
-int const stepper_angel = 5;
-int const cam_up = 5, cam_right = 5, pannels_servo = 5;
 
-int cam_up_angel = 90, cam_right_angel = 90;
+int const cam_up = 5, cam_right = 5, pannels_servo = 5;  // стандартные углы поворота для серво от полезной нагрузки
+
+int cam_up_angel = 90, cam_right_angel = 90;  // начальные углы поворота серво полезной нагрузики
 int current_pannelsservo_angel = 0;
 
+bool f = true;  // флаг, чтобы определять, выматывать солнечную панель или остановить вымотку
+
+
 void loop() {
-  while (!flag_open) {
-    
+
+
+  while (!flag_open) {  // пока сонар не заметил открывания двери, не выходим из цикла
+
     float dist_to_box = sonar.ping_cm();
     Serial.println(dist_to_box);
-    if (dist_to_box > 30) {
+    if (dist_to_box > 30) {  // если крышку короба открыли, отправляем пакет открытия и выходим из цикла
       flag_open = !flag_open;
+      delay(2000);
       Send_data(box_open_packet);
       delay(100);
       Send_data(box_open_packet);
@@ -127,15 +139,15 @@ void loop() {
       Send_data(box_open_packet);
       delay(100);
       Serial.println("Open");
-      delay(5000);  // auto moves
-      
+
     } else {
       Send_data(box_close_packet);
       delay(100);
     }
   }
 
-  uint8_t* data = Get_data(1);
+  uint8_t* data = Get_data(2);
+
 
   if (data != nullptr) {
     int type = data[0];
@@ -144,44 +156,60 @@ void loop() {
     // type 1 - camera right-left
     // type 2 - camera up-down
     // type 3 - panels up-down
-    // type 4 - stepper
-    //Serial.println(data[0]);
-    //Serial.println(data[1]);
-    //Serial.println();
-    if (where == 0){
-        where = -1;
-      }
+    // type 4 - motor for solar pannels
+    if (where == 0) {  // отвечает за направление поворота серв и мотора
+      where = -1;
+    }
 
     if (type == 1) {
 
-      cam_right_angel = constrain(cam_right_angel+where*cam_right, 0, 180);
+      cam_right_angel = constrain(cam_right_angel + where * cam_right, 0, 180);
 
       camera_right_left.write(cam_right_angel);
 
+      delay(100);
+
     } else if (type == 2) {
 
-      
 
-      cam_up_angel = constrain(cam_up_angel+where*cam_up, 0, 180);
+
+      cam_up_angel = constrain(cam_up_angel + where * cam_up, 0, 180);
 
       camera_up_down.write(cam_up_angel);
 
+      delay(100);
+
     } else if (type == 3) {
 
-      current_pannelsservo_angel = constrain(current_pannelsservo_angel+where*pannels_servo, 0, 180);
+      current_pannelsservo_angel = constrain(current_pannelsservo_angel + where * pannels_servo, 0, 180);
 
       panel_up1.write(current_pannelsservo_angel);
       panel_up2.write(180 - current_pannelsservo_angel);
 
+      delay(100);
+
     } else if (type == 4) {
-      stepper.setTargetDeg(stepper_angel);
-      while (stepper.tick()) {}
+      Serial.println(where);
+
+      if (!f) {
+        digitalWrite(PA0, LOW);
+        digitalWrite(PA1, LOW);
+
+      } else {
+        if (where == 1) {
+          digitalWrite(PA0, HIGH);
+          digitalWrite(PA1, LOW);
+        } else {
+          digitalWrite(PA0, LOW);
+          digitalWrite(PA1, HIGH);
+        }
+      }
+      f = !f;
+      delay(100);
     }
 
     delete[] data;
   } else {
-    //Serial.println("No data");
+    delay(100);
   }
-
-  delay(100);
 }
